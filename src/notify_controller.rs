@@ -61,7 +61,7 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
         let hours = offset / 60 / 60;
         let mins = offset / 60 - hours * 60;
 
-        format!("{}\"{} hours {} mins\"", sign, hours, mins)
+        format!("GMT{}{:0>2}:{:0>2}", sign, hours, mins)
     };
 
     let send_message = || async {

@@ -110,7 +110,7 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
                 "Non-working hours for user {} with offset {}",
                 user_id,
                 offset_str
-            )
+            );
         }
 
         let sleep_time = u64::from(3600 - (date.minute() * 60 + date.second()));

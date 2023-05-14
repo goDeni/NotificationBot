@@ -33,7 +33,7 @@ async fn main() {
         .branch(dptree::endpoint(handle_message));
 
     let rep_mutex = Arc::new(Mutex::new(UsersRep::open_or_create("users.db").unwrap()));
-    let notify_controller_mutex = Arc::new(Mutex::new(NotifyController::new(Bot::from_env())));
+    let notify_controller_mutex = Arc::new(Mutex::new(NotifyController::new(bot.clone())));
 
     {
         let mut notify_controller = notify_controller_mutex.try_lock().unwrap();
@@ -183,7 +183,12 @@ async fn wake_up_tommorow(
     }
 
     let mut controller = notify_controller_mutex.lock().await;
-    controller.start(&user_id);
+    match controller.start(&user_id) {
+        StartEnum::AlreadyExist => {
+            log::debug!("Notify task for {} already started", user_id)
+        }
+        StartEnum::Added => {}
+    }
 }
 
 async fn handle_message(bot: Bot, msg: Message) -> ResponseResult<()> {

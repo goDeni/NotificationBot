@@ -148,7 +148,9 @@ async fn handle_done_command(
             bot.send_message(msg.chat.id, "Notifications delayed until tomorrow")
                 .await?;
         }
-        false => {}
+        false => {
+            bot.send_message(msg.chat.id, "Nothing to delay").await?;
+        }
     }
 
     Ok(())

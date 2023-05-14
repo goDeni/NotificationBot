@@ -5,7 +5,7 @@ use teloxide::{requests::Requester, types::ChatId, Bot};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 
 pub struct NotifyController {
-    tasks_map: HashMap<ChatId, JoinHandle<()>>,
+    notify_tasks_map: HashMap<ChatId, JoinHandle<()>>,
     bot: Arc<Bot>,
 }
 
@@ -17,39 +17,43 @@ pub enum StartEnum {
 impl NotifyController {
     pub fn new(bot: Bot) -> NotifyController {
         NotifyController {
-            tasks_map: HashMap::new(),
+            notify_tasks_map: HashMap::new(),
             bot: Arc::new(bot),
         }
     }
 
     pub fn start(&mut self, user_id: &ChatId) -> StartEnum {
-        if self.tasks_map.contains_key(user_id) {
+        if self.notify_tasks_map.contains_key(user_id) {
             return StartEnum::AlreadyExist;
         }
 
-        let task = spawn(notify_task(user_id.clone(), Arc::clone(&self.bot), 5 * 3600));
-        self.tasks_map.insert(user_id.clone(), task);
+        let task = spawn(notify_task(
+            user_id.clone(),
+            Arc::clone(&self.bot),
+            5 * 3600,
+        ));
+        self.notify_tasks_map.insert(user_id.clone(), task);
 
-        log::debug!("Added task {}", user_id);
+        log::debug!("Added notify task {}", user_id);
 
         StartEnum::Added
     }
 
-    pub fn stop(&mut self, user_id: &ChatId) {
-        if !self.tasks_map.contains_key(user_id) {
-            return;
+    pub fn stop(&mut self, user_id: &ChatId) -> bool {
+        if !self.notify_tasks_map.contains_key(user_id) {
+            return false;
         }
 
-        let task = self.tasks_map.remove(user_id).unwrap();
+        let task = self.notify_tasks_map.remove(user_id).unwrap();
         task.abort();
-        log::debug!("Stopped {} task", user_id);
+        log::debug!("Stopped {} notify task", user_id);
+        return true;
     }
 }
 
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
-    let fixed_offset = FixedOffset::east_opt(offset).expect(
-        &format!("Invalid user {} offset {}", user_id, offset)
-    );
+    let fixed_offset = FixedOffset::east_opt(offset)
+        .expect(&format!("Invalid user {} offset {}", user_id, offset));
 
     let offset_str = {
         let mut sign = "+";
@@ -65,7 +69,17 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
     };
 
     let send_message = || async {
-        match bot.send_message(user_id, "Notify!").await {
+        match bot
+            .send_message(
+                user_id,
+                format!(
+                    "{}\n\n{}",
+                    "Notify template!",
+                    "Send the \"/done\" command to turn off notifications until tomorrow"
+                ),
+            )
+            .await
+        {
             Ok(_) => {
                 return true;
             }
@@ -92,7 +106,11 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
                 }
             }
         } else {
-            log::debug!("Non-working hours for user {} with offset {}", user_id, offset_str)
+            log::debug!(
+                "Non-working hours for user {} with offset {}",
+                user_id,
+                offset_str
+            )
         }
 
         let sleep_time = u64::from(3600 - (date.minute() * 60 + date.second()));

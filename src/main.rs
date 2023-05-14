@@ -2,8 +2,10 @@ mod notify_controller;
 mod users_rep;
 
 use async_mutex::Mutex;
+use chrono::{FixedOffset, Local, TimeZone, Timelike};
 use notify_controller::StartEnum;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use tokio::{spawn, time::sleep};
 
 use teloxide::{filter_command, prelude::*, utils::command::BotCommands};
 
@@ -23,7 +25,8 @@ async fn main() {
 
     let commands_handler = filter_command::<Command, _>()
         .branch(dptree::case![Command::Start].endpoint(handle_start_command))
-        .branch(dptree::case![Command::Stop].endpoint(handle_stop_command));
+        .branch(dptree::case![Command::Stop].endpoint(handle_stop_command))
+        .branch(dptree::case![Command::Done].endpoint(handle_done_command));
 
     let messages_handler = Update::filter_message()
         .branch(commands_handler)
@@ -59,6 +62,10 @@ enum Command {
     Start,
     #[command(description = "Stop hotifications sending")]
     Stop,
+    #[command(description = "Stop notifications until tomorrow")]
+    Done,
+    // #[command(description = "Start time zone change dialog")]
+    // ChangeTimezone
 }
 
 async fn handle_start_command(
@@ -121,6 +128,60 @@ async fn handle_stop_command(
     }
 
     Ok(())
+}
+
+async fn handle_done_command(
+    bot: Bot,
+    msg: Message,
+    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+) -> ResponseResult<()> {
+    let mut notify_controller = notify_controller_mutex.lock().await;
+    match notify_controller.stop(&msg.chat.id) {
+        true => {
+            spawn(wake_up_tommorow(
+                msg.chat.id.clone(),
+                5 * 3600,
+                Arc::clone(&users_rep_mutex),
+                Arc::clone(&notify_controller_mutex),
+            ));
+            bot.send_message(msg.chat.id, "Notifications delayed until tomorrow")
+                .await?;
+        }
+        false => {}
+    }
+
+    Ok(())
+}
+
+async fn wake_up_tommorow(
+    user_id: ChatId,
+    offset: i32,
+    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+) {
+    let sleep_time = {
+        let date = FixedOffset::east_opt(offset)
+            .expect(&format!("Invalid user {} offset {}", user_id, offset))
+            .from_utc_datetime(&Local::now().naive_utc());
+
+        u64::from((((24 - date.hour()) * 60) - date.minute()) * 60)
+    };
+
+    log::info!(
+        "Started \"wake up tommorow\" task for {}, we will sleep {} seconds",
+        user_id,
+        sleep_time
+    );
+    sleep(Duration::from_secs(sleep_time)).await;
+
+    let rep = users_rep_mutex.lock().await;
+    if !rep.exists(&user_id) {
+        return;
+    }
+
+    let mut controller = notify_controller_mutex.lock().await;
+    controller.start(&user_id);
 }
 
 async fn handle_message(bot: Bot, msg: Message) -> ResponseResult<()> {

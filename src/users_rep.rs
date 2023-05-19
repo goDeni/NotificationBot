@@ -1,5 +1,6 @@
 use std::{ffi::OsStr, path::Path};
 
+use chrono::FixedOffset;
 use pickledb::error::Result;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use teloxide::types::ChatId;
@@ -8,6 +9,9 @@ pub struct UsersRep {
     db: PickleDb,
 }
 
+const _DEFAULT_SECS: i32 = 5 * 3600;
+
+// FIXME: RENAME
 impl UsersRep {
     pub fn new<P: AsRef<Path>>(path: P) -> UsersRep {
         let db = PickleDb::new(
@@ -37,8 +41,20 @@ impl UsersRep {
         Ok(UsersRep::new(path))
     }
 
+    pub fn get(&self, user_id: &ChatId) -> FixedOffset {
+        let secs = self
+            .db
+            .get::<i32>(&user_id.0.to_string())
+            .expect("Unexpected behavior: user timezone is not setted");
+
+        FixedOffset::east_opt(secs).expect(&format!(
+            "Unexpected behavior: user timezone is invalid {}",
+            secs
+        ))
+    }
+
     pub fn add(&mut self, user_id: &ChatId) -> Result<()> {
-        self.db.set(&user_id.0.to_string(), &1)
+        self.db.set(&user_id.0.to_string(), &_DEFAULT_SECS)
     }
 
     pub fn rem(&mut self, user_id: &ChatId) -> Result<bool> {

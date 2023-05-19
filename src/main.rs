@@ -26,7 +26,8 @@ async fn main() {
     let commands_handler = filter_command::<Command, _>()
         .branch(dptree::case![Command::Start].endpoint(handle_start_command))
         .branch(dptree::case![Command::Stop].endpoint(handle_stop_command))
-        .branch(dptree::case![Command::Done].endpoint(handle_done_command));
+        .branch(dptree::case![Command::Done].endpoint(handle_done_command))
+        .branch(dptree::case![Command::ChangeTimezone].endpoint(handle_change_timezone_command));
 
     let messages_handler = Update::filter_message()
         .branch(commands_handler)
@@ -64,8 +65,8 @@ enum Command {
     Stop,
     #[command(description = "Stop notifications until tomorrow")]
     Done,
-    // #[command(description = "Start time zone change dialog")]
-    // ChangeTimezone
+    #[command(description = "Start time zone change dialog")]
+    ChangeTimezone,
 }
 
 async fn handle_start_command(
@@ -189,6 +190,24 @@ async fn wake_up_tommorow(
         }
         StartEnum::Added => {}
     }
+}
+
+async fn handle_change_timezone_command(
+    bot: Bot,
+    msg: Message,
+    users_rep_mutex: Arc<Mutex<UsersRep>>,
+) -> ResponseResult<()> {
+    let offset = users_rep_mutex.lock().await.get(&msg.chat.id);
+
+    bot.send_message(
+        msg.chat.id,
+        format!(
+            "Current timezone: {}\n\nSend new timezone.\nExamples:\n1. +05:00\n2. -03:00\n3. +03:30",
+            offset.to_string()
+        ),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn handle_message(bot: Bot, msg: Message) -> ResponseResult<()> {

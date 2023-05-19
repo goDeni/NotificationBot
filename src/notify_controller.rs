@@ -55,19 +55,6 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
     let fixed_offset = FixedOffset::east_opt(offset)
         .expect(&format!("Invalid user {} offset {}", user_id, offset));
 
-    let offset_str = {
-        let mut sign = "+";
-        if fixed_offset.local_minus_utc().is_negative() {
-            sign = "-";
-        }
-
-        let offset = fixed_offset.local_minus_utc().abs();
-        let hours = offset / 60 / 60;
-        let mins = offset / 60 - hours * 60;
-
-        format!("GMT{}{:0>2}:{:0>2}", sign, hours, mins)
-    };
-
     let send_message = || async {
         match bot
             .send_message(
@@ -109,7 +96,7 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
             log::debug!(
                 "Non-working hours for user {} with offset {}",
                 user_id,
-                offset_str
+                fixed_offset.to_string(),
             );
         }
 
@@ -119,7 +106,7 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
             sleep_time,
             sleep_time / 60,
             user_id,
-            offset_str,
+            fixed_offset.to_string(),
         );
         sleep(Duration::from_secs(sleep_time)).await;
     }

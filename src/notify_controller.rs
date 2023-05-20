@@ -1,11 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
-use teloxide::{
-    requests::Requester,
-    types::{ChatId},
-    Bot,
-};
+use teloxide::{requests::Requester, types::ChatId, Bot};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 
 pub const HOUR_FROM: u32 = 9;

@@ -89,7 +89,7 @@ fn format_seconds(seconds: u64) -> String {
         result += &format!("{} seconds ", seconds);
     }
 
-    return result.trim().to_string()
+    return result.trim().to_string();
 }
 
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
@@ -147,12 +147,12 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
             }
 
             let sleep_time = match send_message().await {
-                true => {u64::from(((59 - date.minute()) * 60) + (60 - date.second()))}
-                false => {60}
+                true => u64::from(((59 - date.minute()) * 60) + (60 - date.second())),
+                false => 60,
             };
 
             log::debug!(
-                "Sleep time {}. user_id={}, offset={}", 
+                "Sleep time {}. user_id={}, offset={}",
                 format_seconds(sleep_time),
                 user_id,
                 fixed_offset.to_string(),
@@ -162,7 +162,6 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
         send_message().await;
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -177,7 +176,7 @@ mod tests {
         assert_eq!(format_seconds(61), "1 minutes 1 seconds");
         assert_eq!(format_seconds(70), "1 minutes 10 seconds");
         assert_eq!(
-            format_seconds(3600 * 5 + 3 * 60 + 33), 
+            format_seconds(3600 * 5 + 3 * 60 + 33),
             "5 hours 3 minutes 33 seconds"
         );
     }

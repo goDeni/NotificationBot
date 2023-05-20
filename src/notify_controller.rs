@@ -84,12 +84,12 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset) 
         if date.hour() >= HOUR_FROM && date.hour() < HOUR_TO {
             match send_message().await {
                 false => {
-                    log::error!("Message for {} didn't sent!", user_id);
+                    log::error!("Notification message for {} didn't sent!", user_id);
                     sleep(Duration::from_secs(60)).await;
                     continue;
                 }
                 true => {
-                    log::debug!("Message for {} sent!", user_id);
+                    log::debug!("Notification message for {} sent!", user_id);
                 }
             }
         } else {

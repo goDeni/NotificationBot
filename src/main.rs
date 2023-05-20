@@ -96,7 +96,10 @@ async fn handle_start_command(
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    dialogue: MyDialogue,
 ) -> HandlerResult {
+    dialogue.exit().await?;
+
     let mut rep = offsets_rep_mutex.lock().await;
     let mut notify_controller = notify_controller_mutex.lock().await;
 
@@ -145,7 +148,10 @@ async fn handle_stop_command(
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    dialogue: MyDialogue,
 ) -> HandlerResult {
+    dialogue.exit().await?;
+
     let mut offsets_rep = offsets_rep_mutex.lock().await;
     match offsets_rep.rem(&msg.chat.id) {
         Ok(true) => {
@@ -171,7 +177,10 @@ async fn handle_done_command(
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    dialogue: MyDialogue,
 ) -> HandlerResult {
+    dialogue.exit().await?;
+
     let mut notify_controller = notify_controller_mutex.lock().await;
     match notify_controller.stop(&msg.chat.id) {
         true => {
@@ -274,8 +283,6 @@ async fn handle_new_timezone(
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) -> HandlerResult {
-    bot.send_message(msg.chat.id, "Hello").await?;
-
     let message_text = msg
         .text()
         .expect("Unable to get text in message handler")

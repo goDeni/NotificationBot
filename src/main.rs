@@ -64,7 +64,11 @@ async fn main() {
 
     let offsets_repository = OffsetsRepository::open_or_create("users.db").unwrap();
     let mut notification_sender =
-        Notification::build("Notification!".to_string()).sender(bot.clone());
+        Notification::build(std::env::var(&"NOTIFICATION_MESSAGE").unwrap_or({
+            log::warn!("NOTIFICATION_MESSAGE environment variable not set");
+            "Notify!".to_string()
+        }))
+        .sender(bot.clone());
 
     {
         offsets_repository

@@ -3,7 +3,7 @@ mod offsets_rep;
 
 use async_mutex::Mutex;
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
-use notify_controller::{StartEnum, HOUR_FROM, HOUR_TO};
+use notify_controller::{Notification, StartEnum, HOUR_FROM, HOUR_TO};
 use regex::Regex;
 use std::{sync::Arc, time::Duration};
 use tokio::{spawn, time::sleep};
@@ -12,7 +12,7 @@ use teloxide::{
     dispatching::dialogue::InMemStorage, filter_command, prelude::*, utils::command::BotCommands,
 };
 
-use crate::{notify_controller::NotifyController, offsets_rep::OffsetsRepository};
+use crate::{notify_controller::NotificationSender, offsets_rep::OffsetsRepository};
 
 static ERROR_MSG: &str = "Something go wrong 😫";
 static TIMEZONE_RE: &str = r"^([+-])([0-2][0-9]):([0-5][0-9])$";
@@ -62,28 +62,24 @@ async fn main() {
         .branch(dptree::case![State::RemoveMessages].endpoint(handle_message))
         .branch(dptree::case![State::RecieveNewTimezoneOffset].endpoint(handle_new_timezone));
 
-    let rep_mutex = Arc::new(Mutex::new(
-        OffsetsRepository::open_or_create("users.db").unwrap(),
-    ));
-    let notify_controller_mutex = Arc::new(Mutex::new(NotifyController::new(bot.clone())));
+    let offsets_repository = OffsetsRepository::open_or_create("users.db").unwrap();
+    let mut notification_sender =
+        Notification::build("Notification!".to_string()).sender(bot.clone());
 
     {
-        let mut notify_controller = notify_controller_mutex.try_lock().unwrap();
-        rep_mutex
-            .try_lock()
-            .unwrap()
+        offsets_repository
             .get_all()
             .iter()
             .for_each(|(user_id, offset)| {
-                notify_controller.start(user_id, offset.to_owned());
+                notification_sender.start(user_id, offset.to_owned());
             })
     }
 
     Dispatcher::builder(bot, messages_handler)
         .enable_ctrlc_handler()
         .dependencies(dptree::deps![
-            rep_mutex,
-            notify_controller_mutex,
+            Arc::new(Mutex::new(offsets_repository)),
+            Arc::new(Mutex::new(notification_sender)),
             InMemStorage::<State>::new()
         ])
         .build()
@@ -95,7 +91,7 @@ async fn handle_start_command(
     bot: Bot,
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
-    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    notify_controller_mutex: Arc<Mutex<NotificationSender>>,
     dialogue: MyDialogue,
 ) -> HandlerResult {
     dialogue.exit().await?;
@@ -147,7 +143,7 @@ async fn handle_stop_command(
     bot: Bot,
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
-    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    notify_controller_mutex: Arc<Mutex<NotificationSender>>,
     dialogue: MyDialogue,
 ) -> HandlerResult {
     dialogue.exit().await?;
@@ -176,7 +172,7 @@ async fn handle_done_command(
     bot: Bot,
     msg: Message,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
-    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    notify_controller_mutex: Arc<Mutex<NotificationSender>>,
     dialogue: MyDialogue,
 ) -> HandlerResult {
     dialogue.exit().await?;
@@ -205,7 +201,7 @@ async fn wake_up_tommorow(
     user_id: ChatId,
     offset: i32,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
-    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    notify_controller_mutex: Arc<Mutex<NotificationSender>>,
 ) {
     let sleep_time = {
         let date = FixedOffset::east_opt(offset)
@@ -281,7 +277,7 @@ async fn handle_new_timezone(
     msg: Message,
     dialogue: MyDialogue,
     offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
-    notify_controller_mutex: Arc<Mutex<NotifyController>>,
+    notify_controller_mutex: Arc<Mutex<NotificationSender>>,
 ) -> HandlerResult {
     let message_text = msg
         .text()

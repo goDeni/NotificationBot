@@ -1,15 +1,20 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
-use teloxide::{requests::Requester, types::ChatId, Bot};
+use teloxide::{
+    requests::Requester,
+    types::{ChatId},
+    Bot,
+};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 
 pub const HOUR_FROM: u32 = 9;
 pub const HOUR_TO: u32 = 18;
 
-pub struct NotifyController {
+pub struct NotificationSender {
     notify_tasks_map: HashMap<ChatId, JoinHandle<()>>,
     bot: Arc<Bot>,
+    notification: Notification,
 }
 
 pub enum StartEnum {
@@ -17,11 +22,27 @@ pub enum StartEnum {
     AlreadyExist,
 }
 
-impl NotifyController {
-    pub fn new(bot: Bot) -> NotifyController {
-        NotifyController {
+pub struct Notification(String);
+impl Notification {
+    pub fn build(message: String) -> Notification {
+        Notification(message)
+    }
+
+    pub fn sender(self, bot: Bot) -> NotificationSender {
+        NotificationSender::new(bot, self)
+    }
+
+    pub fn message(&self) -> &String {
+        return &self.0;
+    }
+}
+
+impl NotificationSender {
+    pub fn new(bot: Bot, notification: Notification) -> NotificationSender {
+        NotificationSender {
             notify_tasks_map: HashMap::new(),
             bot: Arc::new(bot),
+            notification: notification,
         }
     }
 
@@ -34,6 +55,7 @@ impl NotifyController {
             user_id.clone(),
             Arc::clone(&self.bot),
             offset,
+            self.notification.message().to_owned(),
         ));
         self.notify_tasks_map.insert(user_id.clone(), task);
 
@@ -54,15 +76,14 @@ impl NotifyController {
     }
 }
 
-async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset) {
+async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
     let send_message = || async {
         match bot
             .send_message(
                 user_id,
                 format!(
                     "{}\n\n{}",
-                    "Notify template!",
-                    "Send the \"/done\" command to turn off notifications until tomorrow"
+                    message, "Send the \"/done\" command to turn off notifications until tomorrow"
                 ),
             )
             .await

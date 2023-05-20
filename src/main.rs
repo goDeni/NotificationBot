@@ -3,7 +3,7 @@ mod users_rep;
 
 use async_mutex::Mutex;
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
-use notify_controller::StartEnum;
+use notify_controller::{StartEnum, HOUR_FROM, HOUR_TO};
 use std::{sync::Arc, time::Duration};
 use tokio::{spawn, time::sleep};
 
@@ -96,7 +96,19 @@ async fn handle_start_command(
 
     match notify_controller.start(&msg.chat.id) {
         StartEnum::Added => {
-            bot.send_message(msg.chat.id, "Started!").await?;
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "Notifications sending started!\n\
+                    Current timezone: {}\n\
+                    Notifications will be sent from {}:00 to {}:00 \
+                    every hour untill the \"/done\" command is sent",
+                    rep.get(&msg.chat.id).to_string(),
+                    HOUR_FROM,
+                    HOUR_TO
+                ),
+            )
+            .await?;
         }
         StartEnum::AlreadyExist => {
             bot.send_message(msg.chat.id, "Already started!").await?;

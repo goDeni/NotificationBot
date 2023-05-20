@@ -4,6 +4,9 @@ use chrono::{FixedOffset, Local, TimeZone, Timelike};
 use teloxide::{requests::Requester, types::ChatId, Bot};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 
+pub const HOUR_FROM: u32 = 9;
+pub const HOUR_TO: u32 = 18;
+
 pub struct NotifyController {
     notify_tasks_map: HashMap<ChatId, JoinHandle<()>>,
     bot: Arc<Bot>,
@@ -81,7 +84,7 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
     loop {
         let date = fixed_offset.from_utc_datetime(&Local::now().naive_utc());
 
-        if date.hour() >= 9 && date.hour() < 18 {
+        if date.hour() >= HOUR_FROM && date.hour() < HOUR_TO {
             match send_message().await {
                 false => {
                     log::error!("Message for {} didn't sent!", user_id);

@@ -152,9 +152,10 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
             };
 
             log::debug!(
-                "Sleep time {}. user_id={}", 
+                "Sleep time {}. user_id={}, offset={}", 
                 format_seconds(sleep_time),
                 user_id,
+                fixed_offset.to_string(),
             );
             sleep(Duration::from_secs(sleep_time)).await;
         }

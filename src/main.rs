@@ -114,7 +114,8 @@ async fn handle_start_command(
         log::debug!("User already exist {}", msg.chat.id);
     }
 
-    match notify_controller.start(&msg.chat.id, rep.get(&msg.chat.id)) {
+    let offset = rep.get(&msg.chat.id).unwrap();
+    match notify_controller.start(&msg.chat.id, offset) {
         StartEnum::Added => {
             bot.send_message(
                 msg.chat.id,
@@ -123,7 +124,7 @@ async fn handle_start_command(
                     Current timezone: {}\n\
                     Notifications will be sent from {}:00 to {}:00 \
                     every hour untill the \"/done\" command is sent",
-                    rep.get(&msg.chat.id).to_string(),
+                    offset.to_string(),
                     HOUR_FROM,
                     HOUR_TO
                 ),
@@ -211,16 +212,22 @@ async fn wake_up_tommorow(
     sleep(Duration::from_secs(sleep_time)).await;
 
     let rep = users_rep_mutex.lock().await;
-    if !rep.exists(&user_id) {
-        return;
-    }
-
-    let mut controller = notify_controller_mutex.lock().await;
-    match controller.start(&user_id, rep.get(&user_id)) {
-        StartEnum::AlreadyExist => {
-            log::debug!("Notify task for {} already started", user_id)
+    match rep.get(&user_id) {
+        Some(offset) => {
+            let mut controller = notify_controller_mutex.lock().await;
+            match controller.start(&user_id, offset) {
+                StartEnum::AlreadyExist => {
+                    log::debug!("Notify task for {} already started", user_id)
+                }
+                StartEnum::Added => {}
+            }
         }
-        StartEnum::Added => {}
+        None => {
+            log::info!(
+                "Unable to wake up because user {} offset doesn't exist",
+                user_id
+            )
+        }
     }
 }
 
@@ -230,17 +237,26 @@ async fn handle_change_timezone_command(
     users_rep_mutex: Arc<Mutex<UsersRep>>,
     dialogue: MyDialogue,
 ) -> HandlerResult {
-    let offset = users_rep_mutex.lock().await.get(&msg.chat.id);
-    dialogue.update(State::RecieveNewTimezoneOffset).await?;
-
-    bot.send_message(
-        msg.chat.id,
-        format!(
-            "Current timezone: {}\n\nSend new timezone.\nExamples:\n1. +05:00\n2. -03:00\n3. +03:30",
-            offset.to_string()
-        ),
-    )
-    .await?;
+    match users_rep_mutex.lock().await.get(&msg.chat.id) {
+        Some(offset) => {
+            dialogue.update(State::RecieveNewTimezoneOffset).await?;
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "Current timezone: {}\n\nSend new timezone.\nExamples:\n1. +05:00\n2. -03:00\n3. +03:30",
+                    offset.to_string()
+                ),
+            )
+            .await?;
+        }
+        None => {
+            bot.send_message(
+                msg.chat.id,
+                "Timezone cannot be changed while notifications are disabled",
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 

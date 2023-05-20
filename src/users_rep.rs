@@ -41,20 +41,19 @@ impl UsersRep {
         Ok(UsersRep::new(path))
     }
 
-    pub fn get(&self, user_id: &ChatId) -> FixedOffset {
-        let secs = self
-            .db
-            .get::<i32>(&user_id.0.to_string())
-            .expect("Unexpected behavior: user timezone is not setted");
-
-        FixedOffset::east_opt(secs).expect(&format!(
-            "Unexpected behavior: user timezone is invalid {}",
-            secs
-        ))
+    pub fn get(&self, user_id: &ChatId) -> Option<FixedOffset> {
+        if let Some(secs) = self.db.get::<i32>(&user_id.0.to_string()) {
+            return Some(FixedOffset::east_opt(secs).expect(&format!(
+                "Unexpected behavior: user timezone is invalid {}",
+                secs
+            )));
+        }
+        None
     }
 
     pub fn set(&mut self, user_id: &ChatId, offset: &FixedOffset) -> Result<()> {
-        self.db.set(&user_id.0.to_string(), &offset.local_minus_utc())
+        self.db
+            .set(&user_id.0.to_string(), &offset.local_minus_utc())
     }
 
     pub fn add(&mut self, user_id: &ChatId) -> Result<()> {
@@ -73,12 +72,10 @@ impl UsersRep {
         self.db
             .get_all()
             .iter()
-            .map(|chat_id_str| 
-                {
-                    let chat_id = ChatId(chat_id_str.parse::<i64>().unwrap());
-                    (chat_id, self.get(&chat_id))
-                }
-            )
+            .map(|chat_id_str| {
+                let chat_id = ChatId(chat_id_str.parse::<i64>().unwrap());
+                (chat_id, self.get(&chat_id).unwrap())
+            })
             .collect()
     }
 }

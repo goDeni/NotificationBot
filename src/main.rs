@@ -5,7 +5,7 @@ use async_mutex::Mutex;
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
 use notify_controller::{Notification, StartEnum, HOUR_FROM, HOUR_TO};
 use regex::Regex;
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 use tokio::{spawn, time::sleep};
 
 use teloxide::{
@@ -42,7 +42,13 @@ enum State {
 
 #[tokio::main]
 async fn main() {
-    dotenv::from_filename(".env").unwrap();
+    {
+        let env_file = Path::new(".env");
+        if env_file.exists() {
+            dotenv::from_filename(".env").unwrap();
+        }
+    }
+
     pretty_env_logger::formatted_timed_builder()
         .parse_filters(&std::env::var(&"RUST_LOG").unwrap_or("DEBUG".to_string()))
         .init();

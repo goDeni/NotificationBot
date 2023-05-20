@@ -69,21 +69,22 @@ async fn main() {
         .branch(dptree::case![State::RecieveNewTimezoneOffset].endpoint(handle_new_timezone));
 
     let offsets_repository = OffsetsRepository::open_or_create("users.db").unwrap();
-    let mut notification_sender =
-        Notification::build(std::env::var(&"NOTIFICATION_MESSAGE").unwrap_or({
+    let mut notification_sender = Notification::build({
+        if let Ok(value) = std::env::var(&"NOTIFICATION_MESSAGE") {
+            value
+        } else {
             log::warn!("NOTIFICATION_MESSAGE environment variable not set");
             "Notify!".to_string()
-        }))
-        .sender(bot.clone());
+        }
+    })
+    .sender(bot.clone());
 
-    {
-        offsets_repository
-            .get_all()
-            .iter()
-            .for_each(|(user_id, offset)| {
-                notification_sender.start(user_id, offset.to_owned());
-            })
-    }
+    offsets_repository
+        .get_all()
+        .iter()
+        .for_each(|(user_id, offset)| {
+            notification_sender.start(user_id, offset.to_owned());
+        });
 
     Dispatcher::builder(bot, messages_handler)
         .enable_ctrlc_handler()

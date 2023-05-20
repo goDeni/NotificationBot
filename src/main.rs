@@ -7,7 +7,9 @@ use notify_controller::{StartEnum, HOUR_FROM, HOUR_TO};
 use std::{sync::Arc, time::Duration};
 use tokio::{spawn, time::sleep};
 
-use teloxide::{filter_command, prelude::*, utils::command::BotCommands};
+use teloxide::{
+    dispatching::dialogue::InMemStorage, filter_command, prelude::*, utils::command::BotCommands,
+};
 
 use crate::{notify_controller::NotifyController, users_rep::UsersRep};
 
@@ -24,6 +26,16 @@ enum Command {
     Done,
     #[command(description = "Start time zone change dialog")]
     ChangeTimezone,
+}
+
+type MyDialogue = Dialogue<State, InMemStorage<State>>;
+type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+#[derive(Clone, Default)]
+enum State {
+    #[default]
+    RemoveMessages,
+    RecieveNewTimezoneOffset,
 }
 
 #[tokio::main]
@@ -43,8 +55,10 @@ async fn main() {
         .branch(dptree::case![Command::ChangeTimezone].endpoint(handle_change_timezone_command));
 
     let messages_handler = Update::filter_message()
+        .enter_dialogue::<Message, InMemStorage<State>, State>()
         .branch(commands_handler)
-        .branch(dptree::endpoint(handle_message));
+        .branch(dptree::case![State::RemoveMessages].endpoint(handle_message))
+        .branch(dptree::case![State::RecieveNewTimezoneOffset].endpoint(handle_new_timezone));
 
     let rep_mutex = Arc::new(Mutex::new(UsersRep::open_or_create("users.db").unwrap()));
     let notify_controller_mutex = Arc::new(Mutex::new(NotifyController::new(bot.clone())));
@@ -63,7 +77,11 @@ async fn main() {
 
     Dispatcher::builder(bot, messages_handler)
         .enable_ctrlc_handler()
-        .dependencies(dptree::deps![rep_mutex, notify_controller_mutex])
+        .dependencies(dptree::deps![
+            rep_mutex,
+            notify_controller_mutex,
+            InMemStorage::<State>::new()
+        ])
         .build()
         .dispatch()
         .await;
@@ -74,7 +92,7 @@ async fn handle_start_command(
     msg: Message,
     users_rep_mutex: Arc<Mutex<UsersRep>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
-) -> ResponseResult<()> {
+) -> HandlerResult {
     let mut rep = users_rep_mutex.lock().await;
     let mut notify_controller = notify_controller_mutex.lock().await;
 
@@ -122,7 +140,7 @@ async fn handle_stop_command(
     msg: Message,
     users_rep_mutex: Arc<Mutex<UsersRep>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
-) -> ResponseResult<()> {
+) -> HandlerResult {
     let mut users_rep = users_rep_mutex.lock().await;
     match users_rep.rem(&msg.chat.id) {
         Ok(true) => {
@@ -148,7 +166,7 @@ async fn handle_done_command(
     msg: Message,
     users_rep_mutex: Arc<Mutex<UsersRep>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
-) -> ResponseResult<()> {
+) -> HandlerResult {
     let mut notify_controller = notify_controller_mutex.lock().await;
     match notify_controller.stop(&msg.chat.id) {
         true => {
@@ -208,8 +226,10 @@ async fn handle_change_timezone_command(
     bot: Bot,
     msg: Message,
     users_rep_mutex: Arc<Mutex<UsersRep>>,
-) -> ResponseResult<()> {
+    dialogue: MyDialogue,
+) -> HandlerResult {
     let offset = users_rep_mutex.lock().await.get(&msg.chat.id);
+    dialogue.update(State::RecieveNewTimezoneOffset).await?;
 
     bot.send_message(
         msg.chat.id,
@@ -222,7 +242,13 @@ async fn handle_change_timezone_command(
     Ok(())
 }
 
-async fn handle_message(bot: Bot, msg: Message) -> ResponseResult<()> {
+async fn handle_message(bot: Bot, msg: Message) -> HandlerResult {
     bot.delete_message(msg.chat.id, msg.id).await?;
+    Ok(())
+}
+
+async fn handle_new_timezone(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
+    bot.send_message(msg.chat.id, "Hello").await?;
+    dialogue.exit().await?;
     Ok(())
 }

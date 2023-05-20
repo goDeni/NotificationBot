@@ -72,7 +72,28 @@ impl NotificationSender {
     }
 }
 
+fn format_seconds(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = seconds / 60 - hours * 60;
+
+    let seconds = seconds - minutes * 60 - hours * 3600;
+
+    let mut result = String::new();
+    if hours > 0 {
+        result += &format!("{} hours ", hours);
+    }
+    if minutes > 0 {
+        result += &format!("{} minutes ", minutes);
+    }
+    if seconds > 0 || (hours == 0 && minutes == 0) {
+        result += &format!("{} seconds ", seconds);
+    }
+
+    return result.trim().to_string()
+}
+
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
+    let get_date = || fixed_offset.from_utc_datetime(&Local::now().naive_utc());
     let send_message = || async {
         match bot
             .send_message(
@@ -85,10 +106,11 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
             .await
         {
             Ok(_) => {
+                log::debug!("Notification message for {} sent!", user_id);
                 return true;
             }
             Err(err) => {
-                log::error!("Failed message send {}: {}", user_id, err);
+                log::error!("Notification message for {} didn't sent: {}", user_id, err);
                 return false;
             }
         }
@@ -96,35 +118,66 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
 
     log::debug!("Started notification task for {}!", user_id);
     loop {
-        let date = fixed_offset.from_utc_datetime(&Local::now().naive_utc());
-
-        if date.hour() >= HOUR_FROM && date.hour() < HOUR_TO {
-            match send_message().await {
-                false => {
-                    log::error!("Notification message for {} didn't sent!", user_id);
-                    sleep(Duration::from_secs(60)).await;
-                    continue;
-                }
-                true => {
-                    log::debug!("Notification message for {} sent!", user_id);
+        let date = get_date();
+        let sleep_time = {
+            if date.hour() < HOUR_FROM {
+                u64::from((HOUR_FROM - date.hour()) * 60 - date.minute()) * 60
+            } else {
+                if date.hour() >= HOUR_TO {
+                    u64::from((((24 - date.hour() + HOUR_FROM) * 60) - date.minute()) * 60)
+                } else {
+                    0
                 }
             }
-        } else {
+        };
+        if sleep_time > 0 {
             log::debug!(
-                "Non-working hours for user {} with offset {}",
+                "Waiting for working hours ({}). user_id={} offset={}",
+                format_seconds(sleep_time),
                 user_id,
                 fixed_offset.to_string(),
             );
+            sleep(Duration::from_secs(sleep_time)).await;
         }
 
-        let sleep_time = u64::from(3600 - (date.minute() * 60 + date.second()));
-        log::debug!(
-            "Sleep time {} seconds ({} minutes) for user {} offset {}",
-            sleep_time,
-            sleep_time / 60,
-            user_id,
-            fixed_offset.to_string(),
+        loop {
+            let date = get_date();
+            if date.hour() >= HOUR_TO {
+                break;
+            }
+
+            let sleep_time = match send_message().await {
+                true => {u64::from(((59 - date.minute()) * 60) + (60 - date.second()))}
+                false => {60}
+            };
+
+            log::debug!(
+                "Sleep time {}. user_id={}", 
+                format_seconds(sleep_time),
+                user_id,
+            );
+            sleep(Duration::from_secs(sleep_time)).await;
+        }
+        send_message().await;
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::notify_controller::format_seconds;
+
+    #[test]
+    fn test_format_seconds() {
+        assert_eq!(format_seconds(0), "0 seconds");
+
+        assert_eq!(format_seconds(59), "59 seconds");
+        assert_eq!(format_seconds(60), "1 minutes");
+        assert_eq!(format_seconds(61), "1 minutes 1 seconds");
+        assert_eq!(format_seconds(70), "1 minutes 10 seconds");
+        assert_eq!(
+            format_seconds(3600 * 5 + 3 * 60 + 33), 
+            "5 hours 3 minutes 33 seconds"
         );
-        sleep(Duration::from_secs(sleep_time)).await;
     }
 }

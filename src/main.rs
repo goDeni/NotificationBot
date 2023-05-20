@@ -13,6 +13,19 @@ use crate::{notify_controller::NotifyController, users_rep::UsersRep};
 
 static ERROR_MSG: &str = "Something go wrong 😫";
 
+#[derive(BotCommands, Clone)]
+#[command(rename_rule = "lowercase")]
+enum Command {
+    #[command(description = "Start hotifications sending")]
+    Start,
+    #[command(description = "Stop hotifications sending")]
+    Stop,
+    #[command(description = "Stop notifications until tomorrow")]
+    Done,
+    #[command(description = "Start time zone change dialog")]
+    ChangeTimezone,
+}
+
 #[tokio::main]
 async fn main() {
     dotenv::from_filename(".env").unwrap();
@@ -54,19 +67,6 @@ async fn main() {
         .build()
         .dispatch()
         .await;
-}
-
-#[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase")]
-enum Command {
-    #[command(description = "Start hotifications sending")]
-    Start,
-    #[command(description = "Stop hotifications sending")]
-    Stop,
-    #[command(description = "Stop notifications until tomorrow")]
-    Done,
-    #[command(description = "Start time zone change dialog")]
-    ChangeTimezone,
 }
 
 async fn handle_start_command(

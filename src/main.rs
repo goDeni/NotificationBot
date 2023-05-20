@@ -1,5 +1,5 @@
 mod notify_controller;
-mod users_rep;
+mod offsets_rep;
 
 use async_mutex::Mutex;
 use chrono::{FixedOffset, Local, TimeZone, Timelike};
@@ -12,7 +12,7 @@ use teloxide::{
     dispatching::dialogue::InMemStorage, filter_command, prelude::*, utils::command::BotCommands,
 };
 
-use crate::{notify_controller::NotifyController, users_rep::UsersRep};
+use crate::{notify_controller::NotifyController, offsets_rep::OffsetsRepository};
 
 static ERROR_MSG: &str = "Something go wrong 😫";
 static TIMEZONE_RE: &str = r"^([+-])([0-2][0-9]):([0-5][0-9])$";
@@ -62,7 +62,9 @@ async fn main() {
         .branch(dptree::case![State::RemoveMessages].endpoint(handle_message))
         .branch(dptree::case![State::RecieveNewTimezoneOffset].endpoint(handle_new_timezone));
 
-    let rep_mutex = Arc::new(Mutex::new(UsersRep::open_or_create("users.db").unwrap()));
+    let rep_mutex = Arc::new(Mutex::new(
+        OffsetsRepository::open_or_create("users.db").unwrap(),
+    ));
     let notify_controller_mutex = Arc::new(Mutex::new(NotifyController::new(bot.clone())));
 
     {
@@ -92,10 +94,10 @@ async fn main() {
 async fn handle_start_command(
     bot: Bot,
     msg: Message,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) -> HandlerResult {
-    let mut rep = users_rep_mutex.lock().await;
+    let mut rep = offsets_rep_mutex.lock().await;
     let mut notify_controller = notify_controller_mutex.lock().await;
 
     if !rep.exists(&msg.chat.id) {
@@ -141,11 +143,11 @@ async fn handle_start_command(
 async fn handle_stop_command(
     bot: Bot,
     msg: Message,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) -> HandlerResult {
-    let mut users_rep = users_rep_mutex.lock().await;
-    match users_rep.rem(&msg.chat.id) {
+    let mut offsets_rep = offsets_rep_mutex.lock().await;
+    match offsets_rep.rem(&msg.chat.id) {
         Ok(true) => {
             let mut notify_controller = notify_controller_mutex.lock().await;
             notify_controller.stop(&msg.chat.id);
@@ -167,7 +169,7 @@ async fn handle_stop_command(
 async fn handle_done_command(
     bot: Bot,
     msg: Message,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) -> HandlerResult {
     let mut notify_controller = notify_controller_mutex.lock().await;
@@ -176,7 +178,7 @@ async fn handle_done_command(
             spawn(wake_up_tommorow(
                 msg.chat.id.clone(),
                 5 * 3600,
-                Arc::clone(&users_rep_mutex),
+                Arc::clone(&offsets_rep_mutex),
                 Arc::clone(&notify_controller_mutex),
             ));
             bot.send_message(msg.chat.id, "Notifications delayed until tomorrow")
@@ -193,7 +195,7 @@ async fn handle_done_command(
 async fn wake_up_tommorow(
     user_id: ChatId,
     offset: i32,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) {
     let sleep_time = {
@@ -211,7 +213,7 @@ async fn wake_up_tommorow(
     );
     sleep(Duration::from_secs(sleep_time)).await;
 
-    let rep = users_rep_mutex.lock().await;
+    let rep = offsets_rep_mutex.lock().await;
     match rep.get(&user_id) {
         Some(offset) => {
             let mut controller = notify_controller_mutex.lock().await;
@@ -234,10 +236,10 @@ async fn wake_up_tommorow(
 async fn handle_change_timezone_command(
     bot: Bot,
     msg: Message,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     dialogue: MyDialogue,
 ) -> HandlerResult {
-    match users_rep_mutex.lock().await.get(&msg.chat.id) {
+    match offsets_rep_mutex.lock().await.get(&msg.chat.id) {
         Some(offset) => {
             dialogue.update(State::RecieveNewTimezoneOffset).await?;
             bot.send_message(
@@ -269,7 +271,7 @@ async fn handle_new_timezone(
     bot: Bot,
     msg: Message,
     dialogue: MyDialogue,
-    users_rep_mutex: Arc<Mutex<UsersRep>>,
+    offsets_rep_mutex: Arc<Mutex<OffsetsRepository>>,
     notify_controller_mutex: Arc<Mutex<NotifyController>>,
 ) -> HandlerResult {
     bot.send_message(msg.chat.id, "Hello").await?;
@@ -302,10 +304,10 @@ async fn handle_new_timezone(
         }
     };
 
-    let mut users_rep = users_rep_mutex.lock().await;
+    let mut offsets_rep = offsets_rep_mutex.lock().await;
     let mut controller = notify_controller_mutex.lock().await;
 
-    match users_rep.set(&msg.chat.id, &fixed_offset) {
+    match offsets_rep.set(&msg.chat.id, &fixed_offset) {
         Ok(_) => {
             controller.stop(&msg.chat.id);
             controller.start(&msg.chat.id, fixed_offset);

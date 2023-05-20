@@ -5,25 +5,24 @@ use pickledb::error::Result;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use teloxide::types::ChatId;
 
-pub struct UsersRep {
+pub struct OffsetsRepository {
     db: PickleDb,
 }
 
 const _DEFAULT_SECS: i32 = 5 * 3600;
 
-// FIXME: RENAME
-impl UsersRep {
-    pub fn new<P: AsRef<Path>>(path: P) -> UsersRep {
+impl OffsetsRepository {
+    pub fn new<P: AsRef<Path>>(path: P) -> OffsetsRepository {
         let db = PickleDb::new(
             path,
             PickleDbDumpPolicy::AutoDump,
             SerializationMethod::Json,
         );
 
-        UsersRep { db }
+        OffsetsRepository { db }
     }
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<UsersRep> {
-        Ok(UsersRep {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<OffsetsRepository> {
+        Ok(OffsetsRepository {
             db: PickleDb::load(
                 path,
                 PickleDbDumpPolicy::AutoDump,
@@ -32,13 +31,13 @@ impl UsersRep {
         })
     }
 
-    pub fn open_or_create<S: AsRef<OsStr> + ?Sized>(s: &S) -> Result<UsersRep> {
+    pub fn open_or_create<S: AsRef<OsStr> + ?Sized>(s: &S) -> Result<OffsetsRepository> {
         let path = Path::new(s);
 
         if path.exists() {
-            return UsersRep::open(path);
+            return OffsetsRepository::open(path);
         }
-        Ok(UsersRep::new(path))
+        Ok(OffsetsRepository::new(path))
     }
 
     pub fn get(&self, user_id: &ChatId) -> Option<FixedOffset> {

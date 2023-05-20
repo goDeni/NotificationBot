@@ -13,7 +13,9 @@ RUN apt-get update \
     && apt-get install ca-certificates -y
 COPY \
     --from=build_stage \
-    /build/target/release/notification_bot /app/notification_bot
+    /build/target/release/notification_bot /usr/bin/
 
 WORKDIR /app
-CMD ["/app/notification_bot"]
+VOLUME [ "/app" ]
+
+CMD ["notification_bot"]

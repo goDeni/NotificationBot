@@ -53,6 +53,10 @@ impl UsersRep {
         ))
     }
 
+    pub fn set(&mut self, user_id: &ChatId, offset: &FixedOffset) -> Result<()> {
+        self.db.set(&user_id.0.to_string(), &offset.local_minus_utc())
+    }
+
     pub fn add(&mut self, user_id: &ChatId) -> Result<()> {
         self.db.set(&user_id.0.to_string(), &_DEFAULT_SECS)
     }
@@ -65,11 +69,16 @@ impl UsersRep {
         self.db.exists(&user_id.0.to_string())
     }
 
-    pub fn get_all(&self) -> Vec<ChatId> {
+    pub fn get_all(&self) -> Vec<(ChatId, FixedOffset)> {
         self.db
             .get_all()
             .iter()
-            .map(|chat_id_str| ChatId(chat_id_str.parse::<i64>().unwrap()))
+            .map(|chat_id_str| 
+                {
+                    let chat_id = ChatId(chat_id_str.parse::<i64>().unwrap());
+                    (chat_id, self.get(&chat_id))
+                }
+            )
             .collect()
     }
 }

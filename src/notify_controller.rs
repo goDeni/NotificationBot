@@ -25,7 +25,7 @@ impl NotifyController {
         }
     }
 
-    pub fn start(&mut self, user_id: &ChatId) -> StartEnum {
+    pub fn start(&mut self, user_id: &ChatId, offset: FixedOffset) -> StartEnum {
         if self.notify_tasks_map.contains_key(user_id) {
             return StartEnum::AlreadyExist;
         }
@@ -33,7 +33,7 @@ impl NotifyController {
         let task = spawn(notify_task(
             user_id.clone(),
             Arc::clone(&self.bot),
-            5 * 3600,
+            offset,
         ));
         self.notify_tasks_map.insert(user_id.clone(), task);
 
@@ -54,10 +54,7 @@ impl NotifyController {
     }
 }
 
-async fn notify_task(user_id: ChatId, bot: Arc<Bot>, offset: i32) {
-    let fixed_offset = FixedOffset::east_opt(offset)
-        .expect(&format!("Invalid user {} offset {}", user_id, offset));
-
+async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset) {
     let send_message = || async {
         match bot
             .send_message(

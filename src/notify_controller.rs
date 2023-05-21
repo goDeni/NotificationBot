@@ -169,15 +169,27 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
 
     log::debug!("Started notification task for {}!", user_id);
     loop {
-        while its_working_time(get_user_date()) {
-            sleep(match send_notification().await {
-                true => get_sleep_time(get_user_date()),
-                false => Duration::from_secs(60),
-            })
-            .await;
+        {
+            let date = get_user_date();
+            if !its_working_time(date) {
+                sleep(get_sleep_time(date)).await;
+            }
         }
-        send_notification().await;
-        sleep(get_sleep_time(get_user_date())).await;
+
+        sleep(match send_notification().await {
+            true => get_sleep_time(get_user_date()),
+            false => Duration::from_secs(60),
+        })
+        .await;
+
+        if !its_working_time(get_user_date()) {
+            log::debug!(
+                "Sending today's last message for {} {}",
+                user_id,
+                fixed_offset.to_string()
+            );
+            send_notification().await;
+        }
     }
 }
 

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    cmp::{max, min},
+    collections::HashMap,
+    sync::Arc,
+    time::Duration,
+};
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike, Weekday};
 use teloxide::{requests::Requester, types::ChatId, Bot};
@@ -93,25 +98,38 @@ fn format_seconds(seconds: u64) -> String {
 }
 
 fn get_sleep_time(date: DateTime<FixedOffset>) -> Duration {
-    let sleep_time = match date.weekday() {
-        Weekday::Sun | Weekday::Sat => {
-            ((24 * ((date.weekday() as u32) - 4) + HOUR_FROM - date.hour()) * 60 - date.minute())
-                * 60
-                - date.second()
-        }
-        _ => {
-            if date.hour() < HOUR_FROM {
-                ((HOUR_FROM - date.hour()) * 60 - date.minute()) * 60 - date.second()
-            } else {
-                if date.hour() >= HOUR_TO {
-                    (((24 - date.hour() + HOUR_FROM) * 60) - date.minute()) * 60 - date.second()
-                } else {
-                    ((59 - date.minute()) * 60) + (60 - date.second())
-                }
-            }
-        }
+    let days = match date.weekday() {
+        Weekday::Sat => 2,
+        Weekday::Sun => 1,
+        _ => 0,
     };
-    Duration::from_secs(u64::from(sleep_time))
+
+    let hours: u32;
+    if days == 0 {
+        if date.hour() < HOUR_FROM {
+            hours = HOUR_FROM - date.hour();
+        } else if date.hour() >= HOUR_TO {
+            hours = 24 - date.hour() + HOUR_FROM;
+        } else {
+            hours = 1;
+        }
+    } else if date.hour() < HOUR_FROM {
+        hours = 24 * days + HOUR_FROM;
+    } else {
+        hours = 24 * days - (date.hour() - HOUR_FROM);
+    }
+
+    let mut minutes: u32 = hours * 60;
+    if date.minute() > 0 {
+        minutes -= date.minute();
+    }
+
+    let mut seconds = minutes * 60;
+    if date.second() > 0 {
+        seconds -= date.second();
+    }
+
+    Duration::from_secs(u64::from(seconds))
 }
 
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
@@ -219,7 +237,11 @@ mod tests {
                 for second in 0..=59 {
                     assert_eq!(
                         get_sleep_time(get_date(1, hour, minute, second)).as_secs(),
-                        u64::from(3600 - minute * 60 - second)
+                        u64::from(3600 - minute * 60 - second),
+                        "hour={}, minute={}, second={}",
+                        hour,
+                        minute,
+                        second
                     );
                 }
             }
@@ -235,10 +257,6 @@ mod tests {
                         get_sleep_time(get_date(1, HOUR_FROM - hour_offset, minute, second))
                             .as_secs(),
                         u64::from(3600 * hour_offset - minute * 60 - second),
-                        "hour_offset={}, minute={} second={}",
-                        hour_offset,
-                        minute,
-                        second
                     );
                 }
             }
@@ -250,10 +268,71 @@ mod tests {
         for hour in HOUR_TO..=23 {
             for minute in 0..=59 {
                 for second in 0..=59 {
+                    let sleep_time = get_sleep_time(get_date(1, hour, minute, second)).as_secs();
                     assert_eq!(
-                        get_sleep_time(get_date(1, hour, minute, second)).as_secs(),
+                        sleep_time,
                         u64::from((24 - hour + HOUR_FROM) * 3600 - minute * 60 - second),
+                        "hour={}, minute={}, second={}, sleep_time=\"{}\"",
+                        hour,
+                        minute,
+                        second,
+                        format_seconds(sleep_time)
                     );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sleep_time_on_weekends_before_hour_from() {
+        for day in 6..=7 {
+            for hour in 0..=(HOUR_FROM - 1) {
+                for minute in 0..=59 {
+                    for second in 0..=59 {
+                        let sleep_time =
+                            get_sleep_time(get_date(day, hour, minute, second)).as_secs();
+                        let expected =
+                            u64::from(((24 * (8 - day) + HOUR_FROM) * 60 - minute) * 60 - second);
+                        assert_eq!(
+                            sleep_time,
+                            expected,
+                            "day={}, hour={}, minute={}, second={} got=\"{}\", expected=\"{}\"",
+                            day,
+                            hour,
+                            minute,
+                            second,
+                            format_seconds(sleep_time),
+                            format_seconds(expected)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sleep_time_on_weekends_in_after_hour_from() {
+        for day in 6..=7 {
+            for hour in HOUR_FROM..=23 {
+                for minute in 0..=59 {
+                    for second in 0..=59 {
+                        let sleep_time =
+                            get_sleep_time(get_date(day, hour, minute, second)).as_secs();
+                        let expected = u64::from(
+                            ((24 * (8 - day) - (hour - HOUR_FROM)) * 60 - minute) * 60 - second,
+                        );
+                        assert_eq!(
+                            sleep_time,
+                            expected,
+                            "day={}, hour={}, minute={}, second={} got=\"{}\", expected=\"{}\"",
+                            day,
+                            hour,
+                            minute,
+                            second,
+                            format_seconds(sleep_time),
+                            format_seconds(expected)
+                        );
+                    }
                 }
             }
         }

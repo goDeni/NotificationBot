@@ -1,13 +1,8 @@
-use std::{
-    cmp::{max, min},
-    collections::HashMap,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike, Weekday};
 use teloxide::{requests::Requester, types::ChatId, Bot};
-use tokio::{spawn, task::JoinHandle, time::sleep};
+use tokio::{spawn, task::JoinHandle, time::sleep as async_sleep};
 
 pub const HOUR_FROM: u32 = 9;
 pub const HOUR_TO: u32 = 18;
@@ -97,6 +92,13 @@ fn format_seconds(seconds: u64) -> String {
     return result.trim().to_string();
 }
 
+fn its_working_time(date: DateTime<FixedOffset>) -> bool {
+    match (date.weekday(), date.hour()) {
+        (Weekday::Sat | Weekday::Sun, _) => false,
+        (_, hour) => hour >= HOUR_FROM && hour < HOUR_TO,
+    }
+}
+
 fn get_sleep_time(date: DateTime<FixedOffset>) -> Duration {
     let days = match date.weekday() {
         Weekday::Sat => 2,
@@ -133,8 +135,8 @@ fn get_sleep_time(date: DateTime<FixedOffset>) -> Duration {
 }
 
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
-    let get_date = || fixed_offset.from_utc_datetime(&Local::now().naive_utc());
-    let send_message = || async {
+    let get_user_date = || fixed_offset.from_utc_datetime(&Local::now().naive_utc());
+    let send_notification = || async {
         match bot
             .send_message(
                 user_id,
@@ -155,57 +157,31 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
             }
         }
     };
+    let sleep = |duration: Duration| {
+        log::debug!(
+            "Sleep time {}. user_id={}, offset={}",
+            format_seconds(duration.as_secs()),
+            user_id,
+            fixed_offset.to_string(),
+        );
+        async_sleep(duration)
+    };
 
     log::debug!("Started notification task for {}!", user_id);
     loop {
-        let date = get_date();
-        let sleep_time = {
-            if date.hour() < HOUR_FROM {
-                u64::from((HOUR_FROM - date.hour()) * 60 - date.minute()) * 60
-            } else {
-                if date.hour() >= HOUR_TO {
-                    u64::from((((24 - date.hour() + HOUR_FROM) * 60) - date.minute()) * 60)
-                } else {
-                    0
-                }
-            }
-        };
-        if sleep_time > 0 {
-            log::debug!(
-                "Waiting for working hours ({}). user_id={} offset={}",
-                format_seconds(sleep_time),
-                user_id,
-                fixed_offset.to_string(),
-            );
-            sleep(Duration::from_secs(sleep_time)).await;
+        if its_working_time(get_user_date()) && !send_notification().await {
+            sleep(Duration::from_secs(60)).await;
+            continue;
         }
-
-        loop {
-            let date = get_date();
-            if date.hour() >= HOUR_TO {
-                break;
-            }
-
-            let sleep_time = match send_message().await {
-                true => u64::from(((59 - date.minute()) * 60) + (60 - date.second())),
-                false => 60,
-            };
-
-            log::debug!(
-                "Sleep time {}. user_id={}, offset={}",
-                format_seconds(sleep_time),
-                user_id,
-                fixed_offset.to_string(),
-            );
-            sleep(Duration::from_secs(sleep_time)).await;
-        }
-        send_message().await;
+        sleep(get_sleep_time(get_user_date())).await;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::notify_controller::{format_seconds, get_sleep_time, HOUR_FROM, HOUR_TO};
+    use crate::notify_controller::{
+        format_seconds, get_sleep_time, its_working_time, HOUR_FROM, HOUR_TO,
+    };
     use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 
     #[test]
@@ -228,6 +204,30 @@ mod tests {
                 .unwrap()
                 .naive_utc(),
         );
+    }
+
+    #[test]
+    fn test_its_working_hours() {
+        for minute in 0..=59 {
+            for second in 0..=59 {
+                for hour in HOUR_FROM..HOUR_TO {
+                    assert!(its_working_time(get_date(1, hour, minute, second)));
+                }
+
+                for hour in 0..HOUR_FROM {
+                    assert!(!its_working_time(get_date(1, hour, minute, second)));
+                }
+
+                for hour in HOUR_TO..24 {
+                    assert!(!its_working_time(get_date(1, hour, minute, second)));
+                }
+
+                for hour in 0..24 {
+                    assert!(!its_working_time(get_date(6, hour, minute, second)));
+                    assert!(!its_working_time(get_date(7, hour, minute, second)));
+                }
+            }
+        }
     }
 
     #[test]

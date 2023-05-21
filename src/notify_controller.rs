@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use chrono::{FixedOffset, Local, TimeZone, Timelike};
+use chrono::{DateTime, Datelike, FixedOffset, Local, TimeZone, Timelike, Weekday};
 use teloxide::{requests::Requester, types::ChatId, Bot};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 
@@ -92,6 +92,28 @@ fn format_seconds(seconds: u64) -> String {
     return result.trim().to_string();
 }
 
+fn get_sleep_time(date: DateTime<FixedOffset>) -> Duration {
+    let sleep_time = match date.weekday() {
+        Weekday::Sun | Weekday::Sat => {
+            ((24 * ((date.weekday() as u32) - 4) + HOUR_FROM - date.hour()) * 60 - date.minute())
+                * 60
+                - date.second()
+        }
+        _ => {
+            if date.hour() < HOUR_FROM {
+                ((HOUR_FROM - date.hour()) * 60 - date.minute()) * 60 - date.second()
+            } else {
+                if date.hour() >= HOUR_TO {
+                    (((24 - date.hour() + HOUR_FROM) * 60) - date.minute()) * 60 - date.second()
+                } else {
+                    ((59 - date.minute()) * 60) + (60 - date.second())
+                }
+            }
+        }
+    };
+    Duration::from_secs(u64::from(sleep_time))
+}
+
 async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, message: String) {
     let get_date = || fixed_offset.from_utc_datetime(&Local::now().naive_utc());
     let send_message = || async {
@@ -165,7 +187,8 @@ async fn notify_task(user_id: ChatId, bot: Arc<Bot>, fixed_offset: FixedOffset, 
 
 #[cfg(test)]
 mod tests {
-    use crate::notify_controller::format_seconds;
+    use crate::notify_controller::{format_seconds, get_sleep_time, HOUR_FROM, HOUR_TO};
+    use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 
     #[test]
     fn test_format_seconds() {
@@ -179,5 +202,60 @@ mod tests {
             format_seconds(3600 * 5 + 3 * 60 + 33),
             "5 hours 3 minutes 33 seconds"
         );
+    }
+
+    fn get_date(day: u32, hour: u32, min: u32, secs: u32) -> DateTime<FixedOffset> {
+        return FixedOffset::east_opt(0).unwrap().from_utc_datetime(
+            &Utc.with_ymd_and_hms(2023, 05, day, hour, min, secs)
+                .unwrap()
+                .naive_utc(),
+        );
+    }
+
+    #[test]
+    fn test_sleep_time_in_working_hours() {
+        for hour in HOUR_FROM..=(HOUR_TO - 1) {
+            for minute in 0..=59 {
+                for second in 0..=59 {
+                    assert_eq!(
+                        get_sleep_time(get_date(1, hour, minute, second)).as_secs(),
+                        u64::from(3600 - minute * 60 - second)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sleep_time_before_working_hours() {
+        for hour_offset in 1..=HOUR_FROM {
+            for minute in 0..=59 {
+                for second in 0..=59 {
+                    assert_eq!(
+                        get_sleep_time(get_date(1, HOUR_FROM - hour_offset, minute, second))
+                            .as_secs(),
+                        u64::from(3600 * hour_offset - minute * 60 - second),
+                        "hour_offset={}, minute={} second={}",
+                        hour_offset,
+                        minute,
+                        second
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sleep_time_after_working_hours() {
+        for hour in HOUR_TO..=23 {
+            for minute in 0..=59 {
+                for second in 0..=59 {
+                    assert_eq!(
+                        get_sleep_time(get_date(1, hour, minute, second)).as_secs(),
+                        u64::from((24 - hour + HOUR_FROM) * 3600 - minute * 60 - second),
+                    );
+                }
+            }
+        }
     }
 }

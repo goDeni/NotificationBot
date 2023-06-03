@@ -101,6 +101,13 @@ fn its_working_time(date: DateTime<FixedOffset>) -> bool {
 
 fn get_sleep_time(date: DateTime<FixedOffset>) -> Duration {
     let days = match date.weekday() {
+        Weekday::Fri => {
+            if date.hour() >= HOUR_TO {
+                3
+            } else {
+                0
+            }
+        }
         Weekday::Sat => 2,
         Weekday::Sun => 1,
         _ => 0,
@@ -349,6 +356,29 @@ mod tests {
                             format_seconds(expected)
                         );
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_sleep_time_friday_in_after_hour_to() {
+        for hour in HOUR_TO..=23 {
+            for minute in 0..=59 {
+                for second in 0..=59 {
+                    let sleep_time = get_sleep_time(get_date(5, hour, minute, second)).as_secs();
+                    let expected =
+                        u64::from(((24 * 2 + HOUR_FROM + (24 - hour)) * 60 - minute) * 60 - second);
+                    assert_eq!(
+                        sleep_time,
+                        expected,
+                        "hour={}, minute={}, second={} got=\"{}\", expected=\"{}\"",
+                        hour,
+                        minute,
+                        second,
+                        format_seconds(sleep_time),
+                        format_seconds(expected)
+                    );
                 }
             }
         }
